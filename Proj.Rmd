@@ -1,0 +1,808 @@
+---
+title: "Analysis of Copper Pieces"
+subtitle: "Multivariate Data Analysis - Prof. Eunice Carrasquinha"
+author: |
+  Antonio Alampi (64316)  
+  Riccardo Frattarelli (64492)  
+  Federico Farina (64704)  
+  Cristina García González (64343)
+output: pdf_document
+date: "School Year 2024-2025"
+header-includes:
+  - \usepackage{graphicx}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhead[L]{\includegraphics[width=2cm]{ciencias_ul_azul_h_s-ass.png}} 
+  - \fancyhead[C]{}
+  - \fancyhead[R]{Analysis of Copper Pieces}
+editor_options: 
+  markdown: 
+    wrap: sentence
+geometry: a4paper
+fontsize: 10pt
+linestretch: 1
+---
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\listoffigures
+
+\newpage
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(knitr)
+library(readxl)
+library(corrplot)
+library(RColorBrewer)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(tidyr)
+library(tidyverse)  
+library(cluster)    
+library(factoextra)  
+library(dendextend)
+library(laGP)        
+library(metan)    
+```
+
+# 1. INTRODUCTION
+
+In this report, we present an in-depth analysis of a dataset derived from an experimental study.
+The dataset contains information about various chemical elements, measured as concentrations, across 95 observations.
+These elements include Copper (Cu), Silver (Ag), Arsenic (As), Cobalt (Co), Iron (Fe), Nickel (Ni), Lead (Pb), Antimony (Sb), and Tin (Sn), along with a categorical variable "Local1", which identifies the zones by the letters C, D, H, J, P, S, and U.
+Each variable in the dataset represents the concentration of a particular element, and the goal of this analysis is to explore patterns, reduce the complexity of the data, and identify natural groupings or structures.
+The researcher seeks to understand the underlying relationships within the data, identify potential patterns, and ultimately gain insights into how these elements behave across the experimental observations.
+This report will begin with a preliminary analysis of the dataset, followed by more advanced statistical techniques.
+We will perform a Principal Component Analysis (PCA) to explore dimensionality reduction and identify key components that summarize the data.
+Subsequently, a Cluster Analysis will be conducted using hierarchical methods to group the observations based on their similarity in elemental concentrations.
+The report will also compare the results of both methods, providing a comprehensive interpretation of the findings in accessible terms, suitable for a researcher without advanced statistical expertise.
+
+\newpage
+
+# 2. DESCRIPTION OF THE DATASET
+
+The dataset contains concentration data for various elements (e.g., Cu, Ag, As), though the specific units for these elements are not provided.
+Typically, concentration data like this is expressed in units such as parts per million (ppm), micrograms per gram (µg/g), or milligrams per liter (mg/L), but the exact units are not specified in this dataset.
+There are no missing values in the dataset, as indicated by the fact that all columns have 95 non-null entries.
+The list of the variables represented in the dataset is reported below:
+
+```{r echo=FALSE}
+column_description <- data.frame(
+  Code = c("ID", "Local1", "Cu", "Ag", "As", "Co", "Fe", "Ni", "Pb", "Sb", "Sn"),
+  Name = c(
+    "Identifier", "Location",
+    "Copper concentration",
+    "Silver concentration",
+    "Arsenic concentration",
+    "Cobalt concentration",
+    "Iron concentration",
+    "Nickel concentration",
+    "Lead concentration",
+    "Antimony concentration",
+    "Tin concentration"), 
+  Type = c("integer", "categorical", "integer", "float", "float", "float", "float", "float", "float", "float", "float"),
+  Unit_of_Measurement = c("-", "-", "-", "-", "-", "-", "-", "-", "-", "-", "-"))
+kable(column_description, caption = "Variable Description") 
+```
+
+After importing data, this is how the first of our dataset look like:
+
+```{r echo=FALSE, warning=FALSE}
+#setwd("C:/Users/User/Desktop/Multivariate Data Analysis/Progetto")
+copper <- read_xlsx("data_9.xlsx")
+kable(head(copper), caption = "First Rows of Copper Data")
+```
+
+To better understand the distribution of concentration of these chemical elements, histograms and boxplots were created.
+Analyzing boxplots and histograms is essential as they provide insights into the distribution and variability of data.
+Boxplots summarize key statistics, while histograms reveal the shape of the data distribution.
+
+It should be noted that the differences between the concentrations of the variables are not comparable, as the scales of the graphs below are adapted to the distribution itself and are not standardized for the entire dataset.
+
+```{r echo=FALSE, fig.cap="Histograms of the variables", fig.height=4, fig.width=7}
+#Histograms
+copper %>%
+  keep(is.numeric) %>% 
+  select(-ID) %>% 
+  gather() %>% 
+  ggplot(aes(value, fill = key)) +
+  facet_wrap(~ key, scales = "free", ncol = 3) + 
+  geom_histogram(color = "black", bins = 30, alpha = 0.7) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+From the visualization of these histograms, various observations can be discussed:
+
+-   Ag (Silver): The distribution is skewed to the right (positively skewed).
+    Most values are close to 0, with a few cases of higher concentrations.
+
+-   As (Arsenic): This variable also has a right-skewed distribution.
+    Most observations are concentrated in low values, but there are sporadic values reaching up to around 8.
+
+-   Co (Cobalt): Similar to the first two, the distribution is heavily concentrated near 0 with a long tail to the right.
+
+-   Cu (Copper): This distribution is different from the previous ones.
+    The values are concentrated in a narrow range between 80 and 100, with an approximately normal (or symmetrical) shape.
+    Nothing unexpected, as the pieces analyzed are in fact made of copper with contamination from other elements.
+
+-   Fe (Iron): The distribution is strongly skewed to the right, with most values close to 0 and a few reaching higher values (up to about 10).
+
+-   Ni (Nickel): Most values are close to 0, with a long right tail reaching values up to about 10.
+
+-   Pb (Lead): Here too, the distribution is concentrated near 0, with a long tail to the right.
+    However, the number of observations with very low values is particularly high.
+
+-   Sb (Antimony): The distribution is similar to that of lead, but with values up to 4.
+    Most of the values are however low.
+
+-   Sn (Tin): This distribution is also concentrated near 0, with a long tail to the right.
+
+The boxplots instead show the distribution of the values, highlighting the median, the interquartile range (IQR) and the anomalous values (outliers).
+
+```{r echo=FALSE, fig.cap="Boxplots of the variables", fig.height=4, fig.width=7}
+#boxplots
+copper %>%
+  select_if(is.numeric) %>% 
+  select(-ID) %>%         
+  gather() %>%
+  ggplot(aes(y = value, fill = key)) +
+  facet_wrap(~ key, scales = "free", ncol = 3) +
+  geom_boxplot(alpha = 0.7) + 
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Most of the variables (except obviously the target variable "Cu") have values concentrated around 0, with a very narrow IQR.
+This indicates that typical concentrations are low.
+All variables also present a significant number of outliers, representing samples with exceptionally high concentrations.
+
+\newpage
+
+# 3. APPLICATION OF THE PRINCIPAL COMPONENT ANALYSIS
+
+## 3.1 PREPARING THE DATASET FOR THE ANALYSIS
+
+We are now ready to prepare the dataset for analysis.
+First of all, let's consider a new dataset where the "ID" and "Local" variables will be eliminated, so as to work only with chemical elements.
+
+```{r echo=FALSE}
+#New data only with the element found on the copper
+copper_variables <- copper[,3:11]
+kable(head(copper_variables), caption = "First Rows of Cleaned Copper Data")
+```
+
+From the following summary it stands out that the Cu variable is almost symmetrical since, in proportion, the mean and median differ slightly, unlike the other variables.
+The output also shows the minimum, maximum, and first and third quartile values.
+
+```{r echo=FALSE}
+kable(summary(copper_variables), caption="Summary of Cleaned Copper Data")
+```
+
+## 3.2 CORRELATION AND COVARIANCES ANALYSIS
+
+Before starting with the principal component analysis, it is necessary to carry out a further analysis on the covariance and correlation between the variables present.
+As noted above from the boxplots and histograms, the variables exhibit different variability.
+In the context of PCA, when there are significantly different mean and standard deviation values between the variables, it is appropriate to use the correlation matrix instead of the covariance matrix.
+These two values between the elements are shown below.
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Correlation Matrix"}
+cor_copper <- cor(copper_variables)
+corrplot(cor_copper, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+```
+
+This corrplot shows the correlation between the elements found in the copper pieces.
+Blue dots mean high positive correlation (max = 1), red dots stand for strong negative correlation (min = -1).
+As it can be seen, Cu is highly negative correlated with As, Sb, Fe and Ni.
+As is instead positive correlated with Sb and Fe, whereas Fe is positive correlated with Ni.
+Now we calculate the standard deviation of the variables.
+
+```{r echo=FALSE}
+# Dispersion measures
+dispersion <- copper_variables %>% summarise_if(is.numeric, sd)
+kable(dispersion, caption="Standard Deviation of the Variables")
+```
+
+As we can see, the standard deviation of the variables has not a constant size.
+Moreover, from the summary above we can notice that also the means are not comparable.
+Due to this two facts, it is better to perform the following PCA using the correlation matrix instead of the covariance matrix.
+That is why the covariance is not printed in the past paragraph.
+
+## 3.3 PERFOMING THE PCA
+
+The Principal component analysis (PCA) is a method of analysing multivariate data where the original variables are replaced by another set of variables, uncorrelated, with smaller dimension than the original, with minimal loss of information.
+The new variables, called principal components, are linear combinations of the original variables.
+
+The p.c.
+should reflect, as much as possible, the characteristics of the data, which were expressed by the differentiation that the original variables allowed to establish.
+
+The differentiation between elements of a population is measured by the variance.
+The variance of a principal component is therefore a measure of the amount of information explained by that principal component.
+
+As explained above, we will use the correlation matrix for the application of pca.
+
+Let's start obtaining eigenvalues and eigenvector.
+
+```{r echo=FALSE}
+# Obtain Eigenvalues and Eigenvector (based on the correlation matrix)
+
+##Obtain eigenvalues and eigenvectors
+eigen_copper <- eigen(cor_copper)
+kable(eigen_copper$values, caption="Eigenvalues")
+kable(round(eigen_copper$vectors, 4), caption="Eigenvectors")
+```
+
+From the first table we can notice that there are three eigenvalues greater than 1, therefore there are three principal components to be considered in our analysis.
+According to Kaiser Criterion we should retain only the p.c.'s which correspond to eigenvalues greater than 1.
+
+Let's perform the PCA to evaluate also the other criterion to be considered for the dimensionality reduction:
+
+```{r echo=FALSE}
+# Perform PCA
+pca_copper <- princomp(copper_variables,cor = TRUE)
+print(summary(pca_copper))
+```
+
+Considering three principal components we have a total of explained variance of 61.9%, which is not extremely high.
+One option to consider could be to also include the fourth main component.
+Although it has an eigenvalue slightly below 1, the percentage of variability it brings to the analysis is important.
+We also use the scree plot method to remove these doubts.
+
+We then print the screeplot:
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Scree Plot of the variance explained", warning=FALSE}
+var_explained_copper = pca_copper$sdev^2 / sum(pca_copper$sdev^2)
+pca_data <- data.frame(
+  Component = 1:9,  
+  Variance_Explained = var_explained_copper[1:9]  
+)
+
+pca_data %>% 
+  ggplot(aes(x = Component, y = Variance_Explained)) +
+  geom_line() +
+  geom_point() +
+  xlab("Principal Component") +
+  ylab("Variance Explained") +
+  ylim(0, 1)+
+  theme_minimal()
+```
+
+Looking at the scree plot, it almost seems that there are only two components to consider.
+Combining all our observations, it seems that the most suitable choice for our case is the choice of 3 main components.
+We will proceed with our analysis based on this choice.
+
+Additional Note: practice has shown that mean and scree-plot criteria lead to credible solutions if at least one of the following conditions is met: 
+
+-   number of variables less than 30 (satisfied) 
+-   number of cases (individuals) greater than 250 (not satisfied)
+
+## 3.4 INTERPRETATION OF THE COMPONENTS
+
+### 3.4.1 COMPONENT MATRIX
+
+The meaning of a p.c.
+will be interpreted from the variables that most correlate with it.
+To identify the variables that contribute more for the explanation of each principal component retained, the coefficients of the linear combinations ($a_{ij}$) and the correlations between the initial variables and the p.c.’s, or the loadings will be used.
+
+```{r echo=FALSE}
+component_matrix <- cor(copper_variables,pca_copper$scores)
+kable(round(component_matrix,4), caption="Component Matrix")
+```
+
+### 3.4.2 CALCULATION OF THE THRESHOLD RULE
+
+We want then to apply the Threshold Rule for Significant Contributions.
+For each PC, the threshold is calculated as:
+
+$$
+\text{Threshold} = \sqrt{\frac{\lambda}{p}}
+$$
+
+where: 
+
+-   $\lambda$ is the eigenvalue for a given PC, representing the amount of variance explained by that PC.
+-   $p$ is the total number of variables in the dataset.
+
+This threshold serves as a cutoff for identifying significant correlations between the original variables and the PCs.
+If the absolute value of the correlation between a variable and a PC exceeds this threshold, the variable is considered a significant contributor to that PC.
+
+Each PC can be characterized by the variables that significantly contribute to it, enabling an understanding of the underlying structure and patterns in the data.
+
+Here we calculate the threshold for the 3 principal components.
+
+```{r echo=FALSE}
+#Apply rule for the 1st PC
+rule_1st <- sqrt(eigen_copper$values[1]/9)
+
+#Apply rule for the 2nd PC
+rule_2nd <- sqrt(eigen_copper$values[2]/9)
+
+#Apply rule for the 3rd PC
+rule_3rd <- sqrt(eigen_copper$values[3]/9)
+
+kable(cbind(rule_1st, rule_2nd, rule_3rd), caption="Threshold for the 3 PC")
+```
+
+Hence, here we report the most important variables for the explanations of the 1st, 2nd and 3rd principal components: 
+
+-   1st PC) important variables: Cu, As, Fe, Sb 
+-   2nd PC) important variables: Ag, Pb 
+-   3rd PC) important variables: Co, Ni, Sb
+
+### 3.4.3 CONTRIBUTION OF EACH VARIABLE TO A PC
+
+The contribution of a variable to a principal component (PC) is calculated using the formula:
+
+$$
+a_{ij}^2 = \left( \frac{l_{ij}}{\sqrt{\lambda_j}} \right)^2
+$$
+
+where:
+
+-   $a_{ij}^2$: The squared contributions indicate the proportion of variance in a variable $X_i$ that is explained by a particular PC $Y_j$.
+-   $l_{ij}$: Loading of variable $X_i$ on PC $Y_j$. Loadings indicate the correlation between variables and the principal components.
+-   $\lambda_j$: Eigenvalue of PC $Y_j$, representing the variance explained by that PC.
+
+This formula captures how much of the variance in variable $X_i$ is explained by PC $Y_j$.
+
+The calculation determines how much each variable contributes to explaining the variance in a given PC.
+This helps identify which variables are most relevant to each PC.
+
+```{r echo=FALSE}
+# 1st PC
+## Cu
+a_11_square <- (component_matrix[1,1]/sqrt(eigen_copper$values[1]))^2
+## As
+a_21_square <- (component_matrix[3,1]/sqrt(eigen_copper$values[1]))^2
+## Fe
+a_31_square <- (component_matrix[5,1]/sqrt(eigen_copper$values[1]))^2
+## Sb
+a_41_square <- (component_matrix[8,1]/sqrt(eigen_copper$values[1]))^2
+
+# 2nd PC
+## Ag
+a_12_square <- (component_matrix[2,2]/sqrt(eigen_copper$values[2]))^2
+## Pb
+a_22_square <- (component_matrix[7,2]/sqrt(eigen_copper$values[2]))^2
+
+# 3rd PC
+## Co
+a_13_square <- (component_matrix[4, 3] / sqrt(eigen_copper$values[3]))^2 
+## Ni
+a_23_square <- (component_matrix[6, 3] / sqrt(eigen_copper$values[3]))^2  
+## Sb
+a_33_square <- (component_matrix[8, 3] / sqrt(eigen_copper$values[3]))^2 
+
+results_df <- data.frame(
+  Variable = c("Cu", "As", "Fe", "Ni", "Sb", "Ag", "Pb", "Co"),
+  `a^2 (1st PC)` = c(a_11_square, a_21_square, a_31_square, NA, a_41_square, NA, NA, NA),
+  `a^2 (2nd PC)` = c(NA, NA, NA, NA, NA, a_12_square, a_22_square, NA),
+  `a^2 (3rd PC)` = c(NA, NA, NA, a_23_square, a_33_square, NA, NA, a_13_square)
+)
+
+kable(results_df, col.names = c("Variable", "a^2 (1st PC)", "a^2 (2nd PC)", "a^2 (3rd PC)"), 
+      caption = "Squared Loadings for 1st, 2nd, and 3rd PCs")
+```
+
+To understand the result, for istance, in the second principal component, the behaviour of the variable Pb explains 0.42% of the variance of the p.c., whereas the remaining 0.35% is explained by the variable Ag.
+Every column must sum to 1, but here just the relevant one are reported.
+
+### 3.4.4 CORRELATION BETWEEN VARIABLES AND PC
+
+The correlation between variable $X_i$ and principal component $Y_j$ is denoted as $r_{ij}$ and is computed using the formula:
+
+$$
+r_{ij} = a_{ij} \cdot \lambda_j
+$$
+
+Since we are working with a correlation matrix ($\text{corcopper}$), the principal components (PCs) are already normalized We no longer need to divide by $s_j$, since the correlation matrix ($\text{cor\_copper}$) has been normalized (it accounts for the standard deviations).
+
+where:
+
+-   $r_{ij}$: Correlation between variable $X_i$ and PC $Y_j$.
+-   $a_{ij}$: Contribution of variable $X_i$ to PC $Y_j$ (already computed as $a_{ij}^2$).
+-   $\lambda_j$: Eigenvalue of PC $Y_j$, representing the variance explained by that PC.
+
+Correlations $r_{ij}$ quantify the relationship between each original variable and the principal components (PCs).
+This allows for meaningful interpretation of PCs in terms of the original variables.
+
+High vs. Low Correlation:
+
+-   High $r_{ij}$: Indicates that the variable contributes significantly to the PC, helping define its structure.
+-   Low $r_{ij}$: Suggests that the variable is less relevant to the PC.
+
+Interpreting the PCs By identifying which variables are most strongly correlated with each PC, we can infer what aspect of the data the PC represents.
+
+```{r echo=FALSE}
+# Extract eigenvectors (loadings) and eigenvalues
+loadings <- eigen_copper$vectors
+eigenvalues <- eigen_copper$values
+
+# Compute correlations for first principal component
+Cu <- loadings[1, 1] * sqrt(eigenvalues[1])
+As <- loadings[3, 1] * sqrt(eigenvalues[1])
+Fe <- loadings[5, 1] * sqrt(eigenvalues[1])
+Sb <- loadings[8, 1] * sqrt(eigenvalues[1])
+
+kable(cbind(Cu,As,Fe,Sb), caption="Correlations for the 1st PC")
+```
+
+These values give us the correlations of Cu, As, Fe, and Sb with the first principal component.
+The values reflect the strength and direction of the relationship between each variable and the first principal component.
+If the correlation is high (close to 1 or -1), that variable is strongly related to PC1.
+
+```{r echo=FALSE}
+# Second principal component correlations
+Ag <- loadings[2, 2] * sqrt(eigenvalues[2])
+Pb <- loadings[7, 2] * sqrt(eigenvalues[2])
+
+kable(cbind(Ag,Pb), caption="Correlations for the 2nd PC")
+```
+
+These values represent how strongly Ag and Pb are correlated with PC2.
+A high value indicates that these variables have a significant influence on PC2.
+
+```{r echo=FALSE}
+# Third principal component correlations
+As <- loadings[3, 3] * sqrt(eigenvalues[3])
+Co <- loadings[4, 3] * sqrt(eigenvalues[3])
+Fe <- loadings[5, 3] * sqrt(eigenvalues[3])
+Ni <- loadings[6, 3] * sqrt(eigenvalues[3])
+Sb <- loadings[8, 3] * sqrt(eigenvalues[3])
+
+kable(cbind(As,Co, Fe, Ni, Sb), caption="Correlations for the 3rd PC")
+```
+
+These values will show how strongly As, Co, Fe, Ni, and Sb are correlated with PC3.
+Again, a higher correlation indicates that the variable contributes more to PC3.
+
+## 3.5 GRAPHICAL REPRESENTATION
+
+We want now a graphical representation of the principal components.
+To have a better visualization of the data, we will project only the first 2 PCs as a graph.
+
+```{r echo=FALSE}
+# Extract scores (PC coordinates for samples) and loadings (contributions of variables)
+scores <- as.data.frame(pca_copper$scores) # Principal component scores
+loadings <- as.data.frame(pca_copper$loading[, 1:2]) # Loadings for the first two PCs
+```
+
+```{r echo=FALSE}
+# Rename the columns for clarity
+colnames(scores) <- c("PC1", "PC2")
+rownames(scores) <- copper$ID
+loadings$Variables <- rownames(loadings)
+colnames(loadings) <- c("PC1", "PC2", "Variables")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Plot of the first 2 Principal Components", fig.height=4, fig.width=7}
+library(ggplot2)
+library(ggrepel) 
+library(dplyr)
+
+ggplot() +
+  geom_point(data = scores, aes(x = PC1, y = PC2), color = "lightblue", size = 2) +
+  geom_text_repel(data = scores, aes(x = PC1, y = PC2, label = rownames(scores)), size = 2) +
+  geom_segment(data = loadings, aes(x = 0, y = 0, xend = PC1, yend = PC2), 
+               arrow = arrow(length = unit(0.2, "cm")), color = "red", size = 1) +
+  geom_text_repel(data = loadings, aes(x = PC1, y = PC2, label = Variables), 
+                  color = "darkred", size = 4) +
+  labs(title = "PCA Biplot", x = "PC1", y = "PC2") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal()
+```
+
+Each lightblue point represents a sample of the dataset projected into the two-dimensional space of the first two principal components (PC1 and PC2).
+PC1 (horizontal axis) and PC2 (vertical axis) are the two main components that explain most of the variability in the data.
+The position of the dots indicates the similarity between the samples: the closest ones have similar chemical profiles.
+The red arrows represent chemical variables, the direction and length of the vectors indicate the strength and contribution of each variable to the principal components.
+Variables with vectors similar in direction are positively correlated, while opposite vectors indicate negative correlations.
+
+The biplot highlights how some variables show distinct behaviors.
+For instance, in the first PC As, Sb, Ni and Fe are closely correlated, while Cu is strongly negative correlated to them.
+Moreover, we can observe that variables such as Ag, Sn and Pb don't have a strong impact on the first p.c.
+
+To better understand the position of one of the data point on the place, let's try to understand the behaviour of the point n°2.
+
+Since it is located in the right side of our graph, it seems to have strong values in the variables that lead to this stage.
+
+For istance, we can say that it is characterized by high values of Fe, Ni and As (we can't say which of them) or a really small value of Cu (as it points in the other direction).
+
+With the same motivation, we can state that its values of Ag or Pb should not be that relevant, as its tendency to follow the second p.c.
+is really small.
+
+\newpage
+
+# 4. CLUSTER ANALYSIS
+
+Cluster analysis is a method of grouping statistical units (individuals, objects, etc.), or variables, into groups (whose characteristics are derived from the data) in such a way
+that objects within the same group are more similar than objects located in different
+groups. It is a method of exploratory analysis and reduction of the dimensionality of the data, in the sense that the statistical units are replaced by the groups.
+
+```{r include=FALSE}
+#dispersion measure
+library(dplyr)
+copper_variables %>% summarise_if(is.numeric, sd)
+```
+
+As stated above, the means and variances of the variables are not on the same scale.
+Hence, we will start the cluster analysis by normalizing the variables to account for their differing variances.
+
+Although all variables are in the same unit, those with higher variance, such as Cu, would otherwise dominate the analysis over variables like Ag or Pb with smaller variances.
+
+By applying z-scores, we ensure all variables contribute equally to the Euclidean distance calculation, resulting in a more balanced clustering.
+
+```{r echo = FALSE}
+copper_variables_normalized <- copper_variables %>%
+  mutate(across(everything(), scale))
+kable(head(round(copper_variables_normalized,5)), caption="Copper Variables Normalized")
+```
+
+```{r echo=FALSE}
+# dissimilarity matrix: squared euclidean distance
+dist_copper <- distance(copper_variables_normalized)
+kable(dist_copper[1:5,1:5], caption="Head of the squared euclidean distance between the observations")
+```
+
+Above, the head of the dissimilarity matrix is printed. Those distances will be used later to perform the clustering. To briefly explain the numbers we see, for instance, the distance between the first 2 observations is around 52.6, whereas the distance between the 5th and the 4th is just 2.39. Simply speaking, this means that the second couple is more similar to each other compared to the first one.
+
+## 4.1 HIERARCHICAL CLUSTERING
+
+The main objective of hierarchical classification is to build a tree, whose two-dimensional graphic representation is called a dendrogram. We will use an agglomerative method that proceeds to a series of successive merging of the cases into new classes, ending up with a single class that contains all the elements.
+
+### 4.1.1 SINGLE LINKAGE
+
+First, we perform an agglomerative hierarchical clustering using the single linkage method. This method defines the distance between clusters as the shortest distance between any pair of observations, one from each cluster. 
+
+Then, the merge matrix will display the indices of the clusters or observations that are grouped at each stage of the hierarchical process.
+
+```{r echo = FALSE}
+#AGGLOMERATIVE USING SINLE LINKAGE
+hc_single <- agnes(dist_copper, method="single")
+kable(head(hc_single$merge), caption="Head of the merge matrix")
+```
+
+We also print the agglomerative coefficient, that gives a value between 0 and 1 that measures how good the clusters are, with 1 being better.
+
+```{r echo = FALSE}
+kable(hc_single$ac, caption="Agglomerative coefficient for Single Linkage")
+```
+
+As we can see, the agglomerative coefficient is high enough to consider the cluster analysis well-defined.
+
+Now, we can plot the dendogram:
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Hierarchical Clustering (Single Linkage Method)"}
+#PLOT THE DENDOGRAM
+dend1 <- as.dendrogram(hc_single)
+library(dendextend)
+dend1 <- set(dend1, "labels_cex", 0.35)
+plot(dend1, main = "Hierarchical Clustering (Single Linkage Method)", xlab = "Observations", ylab = "Height (Dissimilarity)")
+```
+
+The dendrogram represents a hierarchical clustering process.
+The vertical axis (Height) indicates the distance or dissimilarity between clusters being merged. Larger values reflect greater dissimilarity.
+
+The agglomerative coefficient of 0.93 suggests a strong clustering structure.
+This indicates that the data naturally forms cohesive clusters.
+The high agglomerative coefficient (close to 1) suggests the clustering is effective and meaningful.
+It indicates that the data points within the clusters are tightly bound and distinct from points in other clusters.
+
+Single linkage tends to produce "chain-like" clusters, where outliers might connect otherwise distinct clusters.
+This can sometimes lead to distorted interpretations, particularly when the dataset has noise or overlapping groups.
+
+To validate the clustering, we need to perform further analysis, such as considering alternative methods (e.g., complete or average linkage) and comparing results.
+
+### 4.1.2 COMPLETE LINKAGE AND WARD LINKAGE
+
+```{r include=FALSE}
+hc_complete <- agnes(dist_copper, method="complete")
+#hc_complete$merge
+#hc_complete$order
+hc_complete$ac
+```
+
+Complete linkage calculates the distance between clusters as the maximum distance between any two points from each cluster.
+This method typically forms compact and evenly distributed clusters, which are less sensitive to chaining effects or outliers compared to single linkage.
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Hierarchical Clustering (Complete Linkage Method)"}
+#PLOT THE DENDOGRAM
+dend2 <- as.dendrogram(hc_complete)
+library(dendextend)
+dend2 <- set(dend2, "labels_cex", 0.35)
+plot(dend2, main = "Hierarchical Clustering (Complete Linkage Method)", xlab = "Observations", ylab = "Height (Dissimilarity)")
+```
+
+The agglomerative coefficient is 0.9532, which is even higher than the previous dendrogram using single linkage.
+This suggests an exceptionally strong clustering structure, meaning the data points within clusters are tightly grouped.
+
+The dendrogram shows clear hierarchical merges, with distinct clusters forming at various height levels.
+Clusters combine at progressively larger dissimilarity levels, with the larger merges occurring closer to the top.
+
+We also plot the dendogram obtained by Ward's Method.
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Hierarchical Clustering (Ward Linkage Method)"}
+#PLOT THE DENDOGRAM
+hc_ward <- agnes(dist_copper, method="ward")
+dend3 <- as.dendrogram(hc_ward)
+library(dendextend)
+dend3 <- set(dend3, "labels_cex", 0.35)
+plot(dend3, main = "Hierarchical Clustering (Ward Linkage Method)", xlab = "Observations", ylab = "Height (Dissimilarity)")
+```
+
+```{r echo=FALSE}
+agg_comparison <- cbind(hc_single$ac, hc_complete$ac, hc_ward$ac)
+colnames(agg_comparison) <- c("Single Linkage", "Complete Linkage", "Ward's Method")
+kable(agg_comparison, caption="Agglomerative coefficients comparison")
+```
+
+Following this, Ward's method is preferred because it has the highest agglomerative coefficient, compared to the other two methods, suggesting that Ward's method produces the most well-defined and meaningful clusters.
+
+Additionally, Ward's method minimizes the total variance within each cluster, leading to clusters that are more compact and less sensitive to outliers.
+This ensures that this clustering solution is more reliable and interpretable.
+
+We also explore the values of the cophenetic coefficients.
+
+```{r echo=FALSE}
+clust_1 <- clustering(as.data.frame(copper_variables_normalized), distmethod = "euclidean", clustmethod = "single")
+clust_2 <- clustering(as.data.frame(copper_variables_normalized), distmethod = "euclidean", clustmethod = "complete")
+clust_3 <- clustering(as.data.frame(copper_variables_normalized), distmethod = "euclidean", clustmethod = "ward.D2")
+
+CC_Single <- clust_1$cophenetic
+CC_Complete <- clust_2$cophenetic
+CC_Ward <- clust_3$cophenetic
+kable(cbind(CC_Single, CC_Complete, CC_Ward), caption = "Cophenetic coefficients")
+```
+
+On one hand, the cophenetic coefficient evaluates how well the dendrogram reflects the original dissimilarities between points. Single linkage merges clusters based on the closest pair of points, which preserves the original pairwise distances better. Ward's method optimizes variance, which can distort the relationship between original pairwise distances and the cluster merging process.
+
+On the other hand, the agglomerative coefficient evaluates the overall tightness and cohesiveness of clusters. Ward's method minimizes the total within-cluster variance, naturally producing compact clusters with strong clustering structure. Single linkage tends to form elongated, "chained" clusters, which can result in weaker cluster structures but may still reflect the original distances well.
+
+Based on the agglomerative coefficient, Ward's method produces the most cohesive and well-defined clusters, making it the most suitable method for prioritizing strong clustering structure. However, its low cophenetic coefficient suggests that it distorts the original pairwise distances significantly, potentially limiting its usefulness for visualizing the relationships in the dendrogram. In contrast, single linkage has the highest cophenetic coefficient, indicating that it better preserves original distances but may form less cohesive clusters.
+
+Due to the nature of our data, and the presence of certain outliers that significantly alter the values of the calculated coefficients, we prefer Ward's method to the single linkage method, also for the reason that it does not create concatenations between the clustered observations.
+
+## 4.2. DETERMINATION OF THE OPTIMAL CLUSTER
+
+Once the dendrogram has been created using Ward's method, the next step is to decide the number of clusters by cutting the tree at an appropriate height.
+This involves finding the level where clusters merge, ensuring they are cohesive internally and distinct from each other.
+
+### 4.2.1. VISUALIZATION METHOD
+
+We will start by visually examining the dendrogram, looking for significant jumps in height to identify natural groupings.
+
+Cutting into 3 clusters gives a simpler view with clear and cohesive groups, making it easier to interpret.
+On the other hand, 4 clusters show more detailed subgroups, which can help find smaller patterns but may reduce the compactness of the clusters.
+
+```{r echo=FALSE, fig.height=4, fig.width=7, fig.cap="Comparison Hierarchical Clustering (Ward) between 3 or 4 clusters"}
+dend3 <- as.dendrogram(hc_ward)
+colors_3 <- brewer.pal(3, "Set1")  
+colors_4 <- brewer.pal(4, "Set1")  
+
+dend3_3 <- dend3 %>%
+  color_branches(k = 3, col = colors_3) %>%
+  color_labels(k = 3, col = colors_3)%>%  
+  set("labels_cex", 0.3)
+
+dend3_4 <- dend3 %>%
+  color_branches(k = 4, col = colors_4) %>%
+  color_labels(k = 4, col = colors_4)%>%  
+  set("labels_cex", 0.3) 
+
+par(mfrow = (c(1,2)))
+plot(dend3_3, main = "Dendrogram (Ward) with 3 Clusters", ylab = "Height")
+plot(dend3_4, main = "Dendrogram (Ward) with 4 Clusters", ylab = "Height")
+```
+
+Analysing the calculated dendogram at first glance, it appears that the division into 3 or 4 clusters is the best. Both divisions separate observation number 1 into a cluster of its own, emphasising its great diversity from the rest of the samples. The presence of this outlier should then be discussed in order to understand its peculiarities.
+
+To confirm our findings, we use the following table showing the height of the dendrogram separations.
+
+```{r echo = FALSE}
+kable(head(sort(hc_ward$height, decreasing = T)), caption="Head of descending dendogram dissimilarity heights")
+```
+
+By analyzing the dendrogram heights, we can identify significant "jumps" in dissimilarity that suggest natural groupings. Analyzing the values in this descending order, the most significant jump occurs between 1350.5291 - 1023.4521 and 1023.4521 - 627.8601. After these, the jumps become less pronounced, suggesting that the most natural separations occur at that level of the hierarchy. We also notice that the 4th cluster creates an additional division for just 2 observations, underlining again presence of outliers.  
+This observation supports the idea that the optimal number of clusters might be 3.
+
+\newpage
+
+# 5. COMPARISON BETWEEN PCA AND CLUSTER ANALYSIS
+
+The Principal Component Analysis and Cluster Analysis together provide a comprehensive understanding of the structure of the data.
+
+PCA identified three primary components that cumulatively explained 61.9% of the total variance, suggesting that a sufficient portion of the dataset's variability can be captured with these components:
+
+-   PC1: Dominated by Copper (Cu), exhibiting inverse relationships with elements like Arsenic (As), Antimony (Sb), and Iron (Fe).
+    This suggests that these elements may act as indicators of distinct chemical profiles.
+
+-   PC2: Differentiates samples based on Silver (Ag) and Lead (Pb) concentrations, reflecting a unique chemical aspect independent of Cu.
+
+-   PC3: Captures additional variability driven by elements such as Cobalt (Co) and Nickel (Ni), indicating secondary chemical traits.
+
+These components underline the different chemical profiles across samples.
+These results effectively reduced the dimensionality of the dataset, enabling easier visualization and interpretation of the relationships among elements.
+
+On the other hand, the hierarchical clustering focused on grouping samples based on their overall similarity in all measured variables.
+Using Ward's linkage method, which maximizes intra-cluster cohesion, the analysis produced a three-cluster solution with a high agglomerative coefficient of 0.97:
+
+-   These clusters align with the observations from PCA, where the projection of data points on the first two principal components already hinted at three distinct groupings.
+
+-   One cluster contained a single outlier sample, emphasizing a significant deviation.
+
+This observation warrants further investigation to determine whether it is an anomaly or representative of a unique chemical composition. This large differentiation between a single observation and the rest of the samples should be analysed further to understand its unusual behaviour.
+
+We can also add some complementary insights about the report:
+
+-   PCA and Clustering Synergy: PCA highlighted the dimensions driving variability, while clustering revealed natural groupings among samples. Together, they provided complementary insights into the data structure.
+
+-   Key Elemental Interactions: Copper’s negative correlation with other metals underscores its pivotal role in the dataset, potentially reflecting contamination or metallurgical processes.
+
+\newpage
+
+# 6. CONCLUSIONS
+
+The study successfully uncovered patterns and relationships in the data.
+These results provide a foundation for more detailed investigations into the roles of specific elements or conditions influencing their distribution.
+
+The first principal component might indicate distinct chemical groupings that could point to zones of anomalously enriched Cu due to either metallurgical processes, contamination, or specific geological formations. This knowledge can help the researcher direct attention to areas of interest, such as high-Cu zones for metallurgical resource evaluation or identifying regions with atypical chemical profiles indicative of pollution.
+
+Due to the same reasons, the second PC can serve for the isolation of areas of contamination with Ag and Pb, perhaps vital in an assessment of the environmental impact or tracing the source of industrial waste.
+
+Clustering can also be used to extract information from our samples. Below, for example, is a table showing the sample count within each zone after our division by clustering (Ward Linkage Method with 3 clusters). For example, we can see that from zone P and H, only samples assigned to the third cluster were extracted. Consequently, a new sample assigned to cluster number 2 whose origin we do not know, if we were to try to assign an extraction location would probably be excluded from these zones.
+
+```{r echo=FALSE}
+cluster_assignments <- cutree(hc_ward, k = 3)
+dataset_with_clusters <- cbind(copper, Cluster = cluster_assignments)
+local <- dataset_with_clusters %>% 
+  group_by(Local1) %>% 
+  count(Cluster)
+kable(local, caption = "Local - Cluster Relationship")
+```
+
+In general, using the results of our clustering to detect patterns in detections can be useful in discovering the provenance of new samples or to imagine the presence of other related elements after the detection of certain substances.
+
+Ours are only assumptions, we do not know the subject matter of geology, so information on dimensionality reduction and clustering should be discussed with an expert to refute or confirm our results.
+
+\newpage
+
+# 7. BIBLIOGRAPHY
+
+Carrasquinha, Eunice (2024). Análise de Dados Multivariados (ADM) [Lecture and tutorial slides]. FCUL ULisboa. Available at: <https://moodle.ciencias.ulisboa.pt/course/view.php?id=5600>
+
+R Core Team (2023). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL <https://www.R-project.org/>
+
+Galili T (2015). dendextend: Extending 'dendrogram' Functionality in R. R package version 1.17.1, <https://CRAN.R-project.org/package=dendextend>.
+
+Gramacy RB, Sun X (2023). laGP: Local Approximate Gaussian Process Regression. R package version 1.6.10, <https://CRAN.R-project.org/package=laGP>.
+
+Henry L, Wickham H (2023). purrr: Functional Programming Tools. R package version 1.0.2, <https://CRAN.R-project.org/package=purrr>.
+
+Kassambara A, Mundt F (2023). factoextra: Extract and Visualize the Results of Multivariate Data Analyses. R package version 1.0.8, <https://CRAN.R-project.org/package=factoextra>.
+
+Maechler M, Rousseeuw P, Struyf A, Hubert M, Hornik K (2022). cluster: “Finding Groups in Data”: Cluster Analysis Extended Rousseeuw et al. R package version 2.1.4, <https://CRAN.R-project.org/package=cluster>.
+
+Neuwirth E (2014). RColorBrewer: ColorBrewer Palettes. R package version 1.1-3, <https://CRAN.R-project.org/package=RColorBrewer>.
+
+Olivoto T, Lúcio ADC (2023). metan: Multi-Environment Trial Analysis. R package version 1.23.1, <https://CRAN.R-project.org/package=metan>.
+
+Wei T, Simko V (2021). corrplot: Visualization of a Correlation Matrix. R package version 0.92, <https://CRAN.R-project.org/package=corrplot>.
+
+Wickham H (2023). ggplot2: Create Elegant Data Visualisations Using the Grammar of Graphics. R package version 3.4.5, <https://CRAN.R-project.org/package=ggplot2>.
+
+Wickham H, Bryan J (2023). readxl: Read Excel Files. R package version 1.4.3, <https://CRAN.R-project.org/package=readxl>.
+
+Wickham H, Bryan J (2023). tidyverse: Easily Install and Load the 'Tidyverse'. R package version 2.0.0, <https://CRAN.R-project.org/package=tidyverse>.
+
+Wickham H, François R, Henry L, Müller K (2023). dplyr: A Grammar of Data Manipulation. R package version 1.1.4, <https://CRAN.R-project.org/package=dplyr>.
+
+Wickham H, Henry L (2023). tidyr: Tidy Messy Data. R package version 1.3.0, <https://CRAN.R-project.org/package=tidyr>.
+
+Xie Y (2015). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.42, <https://CRAN.R-project.org/package=knitr>.
